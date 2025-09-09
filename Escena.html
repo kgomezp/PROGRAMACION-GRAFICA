@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Escena</title>
+<style>canvas { border:1px solid black; }</style>
+</head>
+<body>
+<canvas id="webglCanvas" width="600" height="600"></canvas>
+
+<script id="vs" type="x-shader/x-vertex">
+#version 300 es
+layout(location=0) in vec2 aPosition;
+layout(location=1) in vec3 aColor;
+out vec3 vColor;
+uniform mat4 uMatrizProyeccion;
+uniform mat4 uMatrizVista;
+uniform mat4 uMatrizModelo;
+void main() {
+    gl_Position = uMatrizProyeccion * uMatrizVista * uMatrizModelo * vec4(aPosition,0.0,1.0);
+    vColor = aColor;
+}
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+#version 300 es
+precision mediump float;
+in vec3 vColor;
+out vec4 fragColor;
+void main() {
+    fragColor = vec4(vColor,1.0);
+}
+</script>
+
+<script>
+function identidad(m){
+    for(let i=0;i<16;i++) m[i]=0;
+    m[0]=1;m[5]=1;m[10]=1;m[15]=1;
+}
+function ortho(m,izq,der,abj,arr,cerca,lejos){
+    m[0]=2/(der-izq); m[4]=0; m[8]=0; m[12]=-(der+izq)/(der-izq);
+    m[1]=0; m[5]=2/(arr-abj); m[9]=0; m[13]=-(arr+abj)/(arr-abj);
+    m[2]=0; m[6]=0; m[10]=-2/(lejos-cerca); m[14]=-(lejos+cerca)/(lejos-cerca);
+    m[3]=0; m[7]=0; m[11]=0; m[15]=1;
+}
+
+function crearCirculo(cx,cy,r,n,color){
+    let vertices = [cx,cy,...color];
+    let indices = [];
+    for(let i=0;i<=n;i++){
+        let a = i*2*Math.PI/n;
+        vertices.push(cx+r*Math.cos(a),cy+r*Math.sin(a),...color);
+        if(i>0) indices.push(0,i,i+1);
+    }
+    return {vertices,indices};
+}
+
+function drawShape(gl, programa, vertices, indices, mode){
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+    const posLoc = 0;
+    const colLoc = 1;
+
+    gl.vertexAttribPointer(posLoc,2,gl.FLOAT,false,20,0);
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(colLoc,3,gl.FLOAT,false,20,8);
+    gl.enableVertexAttribArray(colLoc);
+
+    const ibo = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+    gl.drawElements(mode, indices.length, gl.UNSIGNED_SHORT, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER,null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,null);
+}
+
+function main(){
+    const canvas = document.getElementById("webglCanvas");
+    const gl = canvas.getContext("webgl2");
+
+    const vs = document.getElementById("vs").text.trim();
+    const fs = document.getElementById("fs").text.trim();
+
+    const sVert = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(sVert,vs);
+    gl.compileShader(sVert);
+
+    const sFrag = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(sFrag,fs);
+    gl.compileShader(sFrag);
+
+    const programa = gl.createProgram();
+    gl.attachShader(programa,sVert);
+    gl.attachShader(programa,sFrag);
+    gl.linkProgram(programa);
+    gl.useProgram(programa);
+
+    let MatrizProyeccion = new Array(16);
+    let MatrizVista = new Array(16);
+    let MatrizModelo = new Array(16);
+    ortho(MatrizProyeccion,-1,1,-1,1,-1,1);
+    identidad(MatrizVista);
+    identidad(MatrizModelo);
+
+    gl.uniformMatrix4fv(gl.getUniformLocation(programa,"uMatrizProyeccion"),false,MatrizProyeccion);
+    gl.uniformMatrix4fv(gl.getUniformLocation(programa,"uMatrizVista"),false,MatrizVista);
+    gl.uniformMatrix4fv(gl.getUniformLocation(programa,"uMatrizModelo"),false,MatrizModelo);
+
+    gl.viewport(0,0,canvas.width,canvas.height);
+    gl.clearColor(0.5,0.8,1.0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    //suelo
+    drawShape(gl,programa,[
+        -1,-1,0.4,0.2,0,
+         1,-1,0.4,0.2,0,
+         1,-0.8,0.4,0.2,0,
+        -1,-0.8,0.4,0.2,0
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    //sol
+    let sol = crearCirculo(0.8,0.7,0.15,40,[1,1,0]);
+    drawShape(gl,programa,sol.vertices,sol.indices,gl.TRIANGLES);
+
+    //rayos
+    for(let i=0;i<8;i++){
+        let a = i*Math.PI/4;
+        let x1 = 0.8+0.2*Math.cos(a);
+        let y1 = 0.7+0.2*Math.sin(a);
+        let x2 = 0.8+0.3*Math.cos(a);
+        let y2 = 0.7+0.3*Math.sin(a);
+        drawShape(gl,programa,[x1,y1,1,1,0,x2,y2,1,1,0],[0,1],gl.LINES);
+    }
+
+    //cabeza
+    drawShape(gl,programa,[
+        -0.2,0.4,0.9,0.7,0.4,
+         0.2,0.4,0.9,0.7,0.4,
+         0.2,0.7,0.9,0.7,0.4,
+        -0.2,0.7,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    //hocico
+    drawShape(gl,programa,[
+        -0.3,0.2,0.9,0.7,0.4,
+         0.3,0.2,0.9,0.7,0.4,
+         0.3,0.4,0.9,0.7,0.4,
+        -0.3,0.4,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    //orejas
+    drawShape(gl,programa,[
+        -0.6,0.6,0.9,0.7,0.4,
+        -0.2,0.6,0.9,0.7,0.4,
+        -0.2,0.7,0.9,0.7,0.4,
+        -0.6,0.7,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    drawShape(gl,programa,[
+         0.2,0.6,0.9,0.7,0.4,
+         0.6,0.6,0.9,0.7,0.4,
+         0.6,0.7,0.9,0.7,0.4,
+         0.2,0.7,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    //cuerpo
+    drawShape(gl,programa,[
+        -0.5,-0.6,0.9,0.7,0.4,
+         0.5,-0.6,0.9,0.7,0.4,
+         0.0, 0.2,0.9,0.7,0.4
+    ],[0,1,2],gl.TRIANGLES);
+
+    //colita
+    drawShape(gl,programa,[
+        0.4,-0.3,0.9,0.7,0.4,
+        0.7,-0.4,0.9,0.7,0.4,
+        0.5,-0.6,0.9,0.7,0.4
+    ],[0,1,2],gl.TRIANGLES);
+
+    //patitas
+    drawShape(gl,programa,[
+        -0.15,-0.6,0.9,0.7,0.4,
+        -0.05,-0.6,0.9,0.7,0.4,
+        -0.05,-0.8,0.9,0.7,0.4,
+        -0.15,-0.8,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    drawShape(gl,programa,[
+         0.05,-0.6,0.9,0.7,0.4,
+         0.15,-0.6,0.9,0.7,0.4,
+         0.15,-0.8,0.9,0.7,0.4,
+         0.05,-0.8,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    drawShape(gl,programa,[
+        -0.35,-0.6,0.9,0.7,0.4,
+        -0.25,-0.6,0.9,0.7,0.4,
+        -0.25,-0.8,0.9,0.7,0.4,
+        -0.35,-0.8,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    drawShape(gl,programa,[
+         0.25,-0.6,0.9,0.7,0.4,
+         0.35,-0.6,0.9,0.7,0.4,
+         0.35,-0.8,0.9,0.7,0.4,
+         0.25,-0.8,0.9,0.7,0.4
+    ],[0,1,2,0,2,3],gl.TRIANGLES);
+
+    //ojos
+    let ojoIzq = crearCirculo(-0.1,0.6,0.03,20,[0,0,0]);
+    drawShape(gl,programa,ojoIzq.vertices,ojoIzq.indices,gl.TRIANGLES);
+
+    let ojoDer = crearCirculo(0.1,0.6,0.03,20,[0,0,0]);
+    drawShape(gl,programa,ojoDer.vertices,ojoDer.indices,gl.TRIANGLES);
+
+    //nariz
+    let nariz = crearCirculo(0,0.35,0.05,20,[0,0,0]);
+    drawShape(gl,programa,nariz.vertices,nariz.indices,gl.TRIANGLES);
+
+    //pasto
+    for(let i=-1;i<1;i+=0.2){
+        drawShape(gl,programa,[
+            i,-0.8,0,0.5,0,
+            i+0.05,-0.8,0,0.5,0,
+            i+0.025,-0.7,0,0.8,0
+        ],[0,1,2],gl.TRIANGLES);
+    }
+}
+
+window.onload = main;
+</script>
+</body>
+</html>
